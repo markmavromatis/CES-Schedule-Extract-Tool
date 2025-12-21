@@ -1,10 +1,9 @@
 // index.js
-// npm install cheerio
 const https = require("https");
 const cheerio = require("cheerio");
 const fs = require("node:fs");
 
-const SCHEDULE_ITEM_LABEL = "ScheduleItemLabel"
+const SCHEDULE_ITEM_LABEL = "ScheduleItemLabel";
 const SCHEDULE_URL_ELEMENT = "a";
 const SCHEDULE_TIME_CLASS = "p.f-heading-4";
 const SCHEDULE_TITLE_ATTRIBUTE = "aria-label";
@@ -48,52 +47,44 @@ async function scrape(aDate) {
   const rows = [];
   rows.push(COL_HEADERS.join(","));
 
-  const timeRegex = /(\d{1,2}:\d{2}\s*[AP]M)\s*-\s*(\d{1,2}:\d{2}\s*[AP]M)/i;
-
   // Find results
-  $("body")
-    .find("div")
-    .each(async (_, el) => {
-      const elementId = el.attribs.id;
-      if (elementId && elementId.startsWith(SCHEDULE_ITEM_LABEL)) {
-        const timeComponents = $(el)
-          .find(SCHEDULE_TIME_CLASS)[0]
-          .children[0].data.split("-");
-        const startTime = timeComponents[0];
-        const endTime = timeComponents[1];
-        const location = $(el).find(LOCATION_CLASS)[0].children[0].data;
-        const urlLink = $(el).find(SCHEDULE_URL_ELEMENT)[0];
-        const url = urlLink.attribs.href;
-        const title = urlLink.attribs[SCHEDULE_TITLE_ATTRIBUTE];
-        const description = $(el).find(SCHEDULE_DESCRIPTION_CLASS)[0].children[0].data;
-        const tagsElements = $(el).find(SCHEDULE_TAGS_DIV_CLASS).find("a");
-        let tags = "";
-        for (i = 0; i < tagsElements.length; i++) {
-          const tagElement = tagsElements[i];
-          tags += tagElement.attribs[SCHEDULE_TAGS_LABEL_CLASS] + ",";
-        }
-        // tags += '"';
+  $("div[id^='" + SCHEDULE_ITEM_LABEL + "']").each((_, el) => {
+    const timeComponents = $(el)
+      .find(SCHEDULE_TIME_CLASS)[0]
+      .children[0].data.split("-");
+    const startTime = timeComponents[0];
+    const endTime = timeComponents[1];
+    const location = $(el).find(LOCATION_CLASS)[0].children[0].data;
+    const urlLink = $(el).find(SCHEDULE_URL_ELEMENT)[0];
+    const url = urlLink.attribs.href;
+    const title = urlLink.attribs[SCHEDULE_TITLE_ATTRIBUTE];
+    const description = $(el).find(SCHEDULE_DESCRIPTION_CLASS)[0].children[0]
+      .data;
+    const tagsElements = $(el).find(SCHEDULE_TAGS_DIV_CLASS).find("a");
+    let tags = "";
+    for (i = 0; i < tagsElements.length; i++) {
+      const tagElement = tagsElements[i];
+      tags += tagElement.attribs[SCHEDULE_TAGS_LABEL_CLASS] + ",";
+    }
 
-        // console.log(elementId, time, location, url, title, description, tags);
-        rows.push(
-          [
-            csvEscape(aDate),
-            csvEscape(startTime),
-            csvEscape(endTime),
-            csvEscape(location),
-            csvEscape(url),
-            csvEscape(title),
-            csvEscape(description),
-          ].join(",")
-        );
-      }
-    });
+    rows.push(
+      [
+        csvEscape(aDate),
+        csvEscape(startTime),
+        csvEscape(endTime),
+        csvEscape(location),
+        csvEscape(url),
+        csvEscape(title),
+        csvEscape(description),
+      ].join(",")
+    );
+    // }
+  });
   return rows.join("\n");
-  // console.log(rows.join("\n"));
 }
 
-async function writeToFile(aDate, results) {
-  fs.writeFile("./results_" + aDate + ".csv", results, (err) => {
+async function writeToFile(results) {
+  fs.writeFile("./results_all.csv", results, (err) => {
     if (err) {
       console.error(err);
     } else {
@@ -102,10 +93,15 @@ async function writeToFile(aDate, results) {
   });
 }
 
-dates.forEach(async (aDate) => {
-  const results = await scrape(aDate).catch((err) => {
-    console.error(err);
-    process.exit(1);
-  });
-  writeToFile(aDate, results);
-});
+async function main() {
+  let results = [];
+  for (const aDate of dates) {
+    results += await scrape(aDate).catch((err) => {
+      console.error(err);
+      process.exit(1);
+    });
+  }
+  writeToFile(results);
+}
+
+main();
