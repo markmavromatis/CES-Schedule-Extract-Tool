@@ -6,19 +6,23 @@ const fs = require("node:fs");
 const SCHEDULE_ITEM_LABEL = "ScheduleItemLabel";
 const SCHEDULE_URL_ELEMENT = "a";
 const SCHEDULE_TIME_CLASS = "p.f-heading-4";
-const SCHEDULE_TITLE_ATTRIBUTE = "aria-label";
+const SCHEDULE_TITLE_ATTRIBUTE = "h4.f-heading-5";
 const SCHEDULE_DESCRIPTION_CLASS = "p.f-body-2";
-const SCHEDULE_TAGS_DIV_CLASS = "div.items-center";
+const SCHEDULE_TAGS_SPAN_CLASS =
+  "span.whitespace-nowrap.overflow-hidden.text-ellipsis";
 const SCHEDULE_TAGS_LABEL_CLASS = "data-topic-label";
 const LOCATION_CLASS = "p.f-caption-2";
 
 const MASTER_TAGS = [
   "Accessibility",
+  "Accessories",
   "AgTech",
   "Artificial Intelligence",
   "Audio",
   "Beauty Tech",
   "BioTech",
+  "Blockchain & Digital Assets",
+  "Cloud Computing",
   "Computing",
   "Construction & Industrial Tech",
   "Content & Entertainment",
@@ -57,12 +61,19 @@ const MASTER_TAGS = [
   "Streaming",
   "Sustainability",
   "Vehicle Tech & Advanced Mobility",
+  "Video & Display",
   "Wearables",
   "Women's Health Tech",
   "XR & Spatial Computing",
 ];
 
-const dates = ["2026-01-06", "2026-01-07", "2026-01-08", "2026-01-09"];
+const dates = [
+  "2026-01-05",
+  "2026-01-06",
+  "2026-01-07",
+  "2026-01-08",
+  "2026-01-09",
+];
 const BASE_URL = "https://www.ces.tech/schedule/?date=";
 
 // CSV Report
@@ -85,7 +96,7 @@ function loadTagFilters() {
   for (let i = 2; i < argsLength; i++) {
     const track = process.argv[i];
     if (!MASTER_TAGS.includes(track)) {
-      throw "Track " + track + "not found!";
+      throw "Track '" + track + "' not found!";
     } else {
       tagFilters.push(track);
     }
@@ -113,59 +124,99 @@ function csvEscape(value) {
   return s;
 }
 
+function getTags(tagsElements) {
+  let tags = [];
+  // const firstTag = $(el).find(SCHEDULE_TAGS_ANCHOR_CLASS);
+  // const tagsElements = $(el).find(SCHEDULE_TAGS_SPAN_CLASS);
+  if (tagsElements.length > 0) {
+    tagsElements.each((_, anElement) => {
+      tags.push(anElement.children[0].data);
+    });
+  }
+  return tags;
+}
+
+function checkTagFilters(tags) {
+  for (let i = 0; i < tags.length; i++) {
+    if (tagFilters.includes(tags[i])) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function getStartTime(timeListElement) {
+  return timeListElement.children("div.container")[0].children[1].children[1]
+    .children[0].data;
+}
+
+function getEventAnchorTagsFromStartTime(timeListElement) {
+  return timeListElement.find("div.text-primary").children("a");
+}
+
 async function scrape(aDate) {
   const URL = BASE_URL + aDate;
   const html = await httpGet(URL);
   const $ = cheerio.load(html);
 
   const rows = [];
-  rows.push(COL_HEADERS.join(","));
 
   // Find results
-  $("div[id^='" + SCHEDULE_ITEM_LABEL + "']").each((_, el) => {
-    let includeRow = false;
-    const timeComponents = $(el)
-      .find(SCHEDULE_TIME_CLASS)[0]
-      .children[0].data.split("-");
-    const startTime = timeComponents[0];
-    const endTime = timeComponents[1];
-    const location = $(el).find(LOCATION_CLASS)[0].children[0].data;
-    const urlLink = $(el).find(SCHEDULE_URL_ELEMENT)[0];
-    const url = urlLink.attribs.href;
-    const title = urlLink.attribs[SCHEDULE_TITLE_ATTRIBUTE];
-    const description = $(el).find(SCHEDULE_DESCRIPTION_CLASS)[0].children[0]
-      .data;
-    const tagsElements = $(el).find(SCHEDULE_TAGS_DIV_CLASS).find("a");
-    let tags = "";
-    if (tagFilters.length == 0) {
-      includeRow = true;
-    } else {
-      for (i = 0; i < tagsElements.length; i++) {
-        const tagElement = tagsElements[i];
-        const tagValue = tagElement.attribs[SCHEDULE_TAGS_LABEL_CLASS];
-        if (tagFilters.includes(tagValue)) {
-          includeRow = true;
-        }
-        tags += tagValue + ",";
-      }
-    }
-    if (includeRow) {
-      rows.push(
-        [
-          csvEscape(aDate),
-          csvEscape(startTime),
-          csvEscape(endTime),
-          csvEscape(location),
-          csvEscape(url),
-          csvEscape(tags),
-          csvEscape(title),
-          csvEscape(description),
-        ].join(",")
-      );
-    }
-  });
+  let count = 0;
 
-  return rows.join("\n");
+  const meetingStartTimes = $($("ul[data-accordion-media='md-']")[0]).children(
+    "li"
+  );
+
+  meetingStartTimes.each((_, timeListElement) => {
+    const meetingStartTime = getStartTime($(timeListElement));
+    const events = getEventAnchorTagsFromStartTime($(timeListElement));
+    let includeRow = false;
+    events.each((_, anEvent) => {
+      const timeComponents = $(anEvent.parent)
+        .find(SCHEDULE_TIME_CLASS)[0]
+        .children[0].data.split("-");
+      const startTime = timeComponents[0].trim();
+      const endTime = timeComponents[1].trim();
+      const location = $(anEvent.parent).find(LOCATION_CLASS)[0].children[0]
+        .data;
+      const title = $(anEvent.parent).find(SCHEDULE_TITLE_ATTRIBUTE)[0]
+        .children[0].data;
+      const url = anEvent.attribs.href;
+      let description = "";
+      try {
+        description = $(anEvent.parent).find(SCHEDULE_DESCRIPTION_CLASS)[0]
+          .children[0].data;
+      } catch (error) {
+        console.warn("No description available for efvent: " + title);
+      }
+      const tagsElements = $(anEvent.parent).find(SCHEDULE_TAGS_SPAN_CLASS);
+      const tags = getTags(tagsElements);
+
+      console.log(startTime, endTime, title, description);
+      if (tagFilters.length == 0) {
+        includeRow = true;
+      } else {
+        includeRow = checkTagFilters(tags);
+      }
+
+      if (includeRow) {
+        rows.push(
+          [
+            csvEscape(aDate),
+            csvEscape(startTime),
+            csvEscape(endTime),
+            csvEscape(location),
+            csvEscape(url),
+            csvEscape(tags.join(", ")),
+            csvEscape(title),
+            csvEscape(description),
+          ].join(",")
+        );
+      }
+    });
+  });
+  return rows.join("\n") + "\n";
 }
 
 async function writeToFile(results) {
@@ -180,6 +231,7 @@ async function writeToFile(results) {
 
 async function main() {
   let results = [];
+  results.push(COL_HEADERS.join(",") + "\n");
   loadTagFilters();
   for (const aDate of dates) {
     results += await scrape(aDate).catch((err) => {
