@@ -3,14 +3,11 @@ const https = require("https");
 const cheerio = require("cheerio");
 const fs = require("node:fs");
 
-const SCHEDULE_ITEM_LABEL = "ScheduleItemLabel";
-const SCHEDULE_URL_ELEMENT = "a";
 const SCHEDULE_TIME_CLASS = "p.f-heading-4";
 const SCHEDULE_TITLE_ATTRIBUTE = "h4.f-heading-5";
 const SCHEDULE_DESCRIPTION_CLASS = "p.f-body-2";
 const SCHEDULE_TAGS_SPAN_CLASS =
   "span.whitespace-nowrap.overflow-hidden.text-ellipsis";
-const SCHEDULE_TAGS_LABEL_CLASS = "data-topic-label";
 const LOCATION_CLASS = "p.f-caption-2";
 
 const MASTER_TAGS = [
@@ -124,10 +121,9 @@ function csvEscape(value) {
   return s;
 }
 
+// Extract tags from a schedule event
 function getTags(tagsElements) {
   let tags = [];
-  // const firstTag = $(el).find(SCHEDULE_TAGS_ANCHOR_CLASS);
-  // const tagsElements = $(el).find(SCHEDULE_TAGS_SPAN_CLASS);
   if (tagsElements.length > 0) {
     tagsElements.each((_, anElement) => {
       tags.push(anElement.children[0].data);
@@ -136,6 +132,7 @@ function getTags(tagsElements) {
   return tags;
 }
 
+// Compare tags to filters
 function checkTagFilters(tags) {
   for (let i = 0; i < tags.length; i++) {
     if (tagFilters.includes(tags[i])) {
@@ -145,9 +142,9 @@ function checkTagFilters(tags) {
   return false;
 }
 
-function getStartTime(timeListElement) {
-  return timeListElement.children("div.container")[0].children[1].children[1]
-    .children[0].data;
+// Schedule event start time
+function getStartEndTimes(eventDivTag) {
+  return eventDivTag.find(SCHEDULE_TIME_CLASS)[0].children[0].data.split("-");
 }
 
 function getEventAnchorTagsFromStartTime(timeListElement) {
@@ -169,28 +166,23 @@ async function scrape(aDate) {
   );
 
   meetingStartTimes.each((_, timeListElement) => {
-    const meetingStartTime = getStartTime($(timeListElement));
-    const events = getEventAnchorTagsFromStartTime($(timeListElement));
+    // const meetingStartTime = getStartTime($(timeListElement));
+    const eventUrlTags = getEventAnchorTagsFromStartTime($(timeListElement));
     let includeRow = false;
-    events.each((_, anEvent) => {
-      const timeComponents = $(anEvent.parent)
-        .find(SCHEDULE_TIME_CLASS)[0]
-        .children[0].data.split("-");
-      const startTime = timeComponents[0].trim();
-      const endTime = timeComponents[1].trim();
-      const location = $(anEvent.parent).find(LOCATION_CLASS)[0].children[0]
-        .data;
-      const title = $(anEvent.parent).find(SCHEDULE_TITLE_ATTRIBUTE)[0]
-        .children[0].data;
-      const url = anEvent.attribs.href;
+    eventUrlTags.each((_, eventUrlTag) => {
+      const parent = $(eventUrlTag.parent);
+      const [startTime, endTime] = getStartEndTimes(parent);
+      const location = parent.find(LOCATION_CLASS)[0].children[0].data;
+      const title = parent.find(SCHEDULE_TITLE_ATTRIBUTE)[0].children[0].data;
+      const url = eventUrlTag.attribs.href;
       let description = "";
       try {
-        description = $(anEvent.parent).find(SCHEDULE_DESCRIPTION_CLASS)[0]
-          .children[0].data;
+        description = parent.find(SCHEDULE_DESCRIPTION_CLASS)[0].children[0]
+          .data;
       } catch (error) {
         console.warn("No description available for efvent: " + title);
       }
-      const tagsElements = $(anEvent.parent).find(SCHEDULE_TAGS_SPAN_CLASS);
+      const tagsElements = parent.find(SCHEDULE_TAGS_SPAN_CLASS);
       const tags = getTags(tagsElements);
 
       console.log(startTime, endTime, title, description);
